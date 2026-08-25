@@ -25,13 +25,12 @@
 
 // C++ API headers
 #include "AnalysisListModel.h"
-#include "AnalysisOverlay.h"
-#include "AnalysisOverlayListModel.h"
+#include "Envelope.h"
 #include "GeoElementLineOfSight.h"
 #include "GeoElementViewshed.h"
 #include "LocationLineOfSight.h"
 #include "LocationViewshed.h"
-#include "SceneView.h"
+#include "SceneViewTypes.h"
 #include "Viewshed.h"
 
 using namespace Esri::ArcGISRuntime;
@@ -120,7 +119,7 @@ void CombinedAnalysisListModel::setLineOfSightModel(AnalysisListModel* lineOfSig
   m_lineOfSightModel = lineOfSightModel;
 
   // persist a unique index for each Line of sight as they are added - to be used to construct a name
-  connect(m_lineOfSightModel, &AnalysisListModel::analysisAdded, this, [this](int index)
+  connect(m_lineOfSightModel, &AnalysisListModel::itemAdded, this, [this](int index)
   {
     Analysis* addedAnalysis = m_lineOfSightModel->at(index);
     if (addedAnalysis)

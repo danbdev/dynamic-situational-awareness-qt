@@ -1,4 +1,3 @@
-
 /*******************************************************************************
  *  Copyright 2012-2018 Esri
  *
@@ -20,33 +19,33 @@
 
 #include "MarkupController.h"
 
-// dsa app headers
-#include "MarkupBroadcast.h"
-#include "MarkupLayer.h"
-
-// toolkit headers
-#include "ToolManager.h"
-#include "ToolResourceProvider.h"
-
 // C++ API headers
-#include "FeatureCollectionLayer.h"
 #include "GeoView.h"
 #include "GeometryEngine.h"
 #include "GeometryTypes.h"
 #include "Graphic.h"
+#include "GraphicListModel.h"
 #include "GraphicsOverlay.h"
-#include "Map.h"
-#include "MapQuickView.h"
+#include "GraphicsOverlayListModel.h"
+#include "IdentifyGraphicsOverlayResult.h"
+#include "LayerSceneProperties.h"
+#include "MapViewTypes.h"
 #include "MultipartBuilder.h"
 #include "PartCollection.h"
-#include "PolylineBuilder.h"
-#include "Scene.h"
-#include "SceneQuickView.h"
+#include "SceneViewTypes.h"
 #include "SimpleLineSymbol.h"
 #include "Symbol.h"
+#include "SymbolTypes.h"
 
 // Qt headers
 #include <QCursor>
+#include <QFuture>
+
+// DSA headers
+#include "MarkupBroadcast.h"
+#include "MarkupLayer.h"
+#include "ToolManager.h"
+#include "ToolResourceProvider.h"
 
 using namespace Esri::ArcGISRuntime;
 
@@ -68,7 +67,7 @@ MarkupController::MarkupController(QObject* parent):
   AbstractSketchTool(parent),
   m_markupBroadcast(new MarkupBroadcast(parent))
 {
-  connect(Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::geoViewChanged, this, &MarkupController::updateGeoView);
+  connect(ToolResourceProvider::instance(), &ToolResourceProvider::geoViewChanged, this, &MarkupController::updateGeoView);
 
   updateGeoView();
   updatedSymbol();
@@ -83,7 +82,7 @@ MarkupController::MarkupController(QObject* parent):
     emit this->markupSent(fileName);
   });
 
-  Toolkit::ToolManager::instance().addTool(this);
+  ToolManager::instance().addTool(this);
 }
 
 /*!
@@ -237,29 +236,32 @@ void MarkupController::init()
   initGeometryBuilder();
 
   if (m_is3d)
-    m_sketchOverlay->setSceneProperties(LayerSceneProperties(SurfacePlacement::Draped));
+    m_sketchOverlay->setSceneProperties(LayerSceneProperties(SurfacePlacement::DrapedFlat));
 
-  connect(Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::identifyGraphicsOverlayCompleted, this, [this](QUuid, IdentifyGraphicsOverlayResult* identifyResult)
-  {
-    if (!m_active)
-      return;
-
-    if (identifyResult->graphics().size() > 0)
-      identifyResult->graphicsOverlay()->selectGraphics(identifyResult->graphics());
-    else
-      m_sketchOverlay->unselectGraphics(m_sketchOverlay->selectedGraphics());
-  });
-
-  connect(Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::mouseClicked, this, [this](QMouseEvent& mouseEvent)
+  connect(ToolResourceProvider::instance(), &ToolResourceProvider::mouseClicked, this, [this](QMouseEvent& mouseEvent)
   {
     if (!m_active)
       return;
 
     if (!m_isDrawing)
-      m_geoView->identifyGraphicsOverlay(m_sketchOverlay, mouseEvent.x(), mouseEvent.y(), m_is3d ? 100 : 20, false, 1);
+    {
+      m_geoView->identifyGraphicsOverlayAsync(m_sketchOverlay, mouseEvent.position(), m_is3d ? 100 : 20, false, 1, this).then(this, [this](IdentifyGraphicsOverlayResult* result)
+      {
+        if (!m_active)
+          return;
+
+        const auto graphics = result->graphics();
+        if (graphics.size() > 0)
+          result->graphicsOverlay()->selectGraphics(graphics);
+        else
+          m_sketchOverlay->unselectGraphics(m_sketchOverlay->selectedGraphics());
+
+        result->deleteLater();
+      });
+    }
   });
 
-  connect(Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::mousePressed, this, [this](QMouseEvent& mouseEvent)
+  connect(ToolResourceProvider::instance(), &ToolResourceProvider::mousePressed, this, [this](QMouseEvent& mouseEvent)
   {
     // ignore right clicks
     if (mouseEvent.button() == Qt::MouseButton::RightButton)
@@ -282,7 +284,7 @@ void MarkupController::init()
     m_sketchOverlay->graphics()->append(partGraphic);
     m_currentPartIndex = addPart();
 
-    Point pressedPoint(normalizedPoint(mouseEvent.x(), mouseEvent.y()));
+    Point pressedPoint(normalizedPoint(mouseEvent.position().x(), mouseEvent.position().y()));
     if (m_sketchOverlay->sceneProperties().surfacePlacement() == SurfacePlacement::Relative)
       pressedPoint = Point(pressedPoint.x(), pressedPoint.y(), m_drawingAltitude);
 
@@ -291,38 +293,38 @@ void MarkupController::init()
     // for touch screen operation
     mouseEvent.ignore();
 
-    Toolkit::ToolResourceProvider::instance()->setMouseCursor(QCursor(Qt::PointingHandCursor));
+    ToolResourceProvider::instance()->setMouseCursor(QCursor(Qt::PointingHandCursor));
     m_isDrawing = true;
   });
 
-  connect(Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::mouseMoved, this, [this](QMouseEvent& mouseEvent)
+  connect(ToolResourceProvider::instance(), &ToolResourceProvider::mouseMoved, this, [this](QMouseEvent& mouseEvent)
   {
     if (!m_active || !m_isDrawing)
       return;
 
     mouseEvent.accept();
 
-    Point movedPoint(normalizedPoint(mouseEvent.x(), mouseEvent.y()));
+    Point movedPoint(normalizedPoint(mouseEvent.position().x(), mouseEvent.position().y()));
     if (m_sketchOverlay->sceneProperties().surfacePlacement() == SurfacePlacement::Relative)
       movedPoint = Point(movedPoint.x(), movedPoint.y(), m_drawingAltitude);
 
     insertPointInPart(m_currentPartIndex, -1, movedPoint);
   });
 
-  connect(Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::mouseReleased, this, [this](QMouseEvent& mouseEvent)
+  connect(ToolResourceProvider::instance(), &ToolResourceProvider::mouseReleased, this, [this](QMouseEvent& mouseEvent)
   {
     if (!m_active || !m_isDrawing)
       return;
 
     mouseEvent.accept();
 
-    Point releasedPoint(normalizedPoint(mouseEvent.x(), mouseEvent.y()));
+    Point releasedPoint(normalizedPoint(mouseEvent.position().x(), mouseEvent.position().y()));
     if (m_sketchOverlay->sceneProperties().surfacePlacement() == SurfacePlacement::Relative)
       releasedPoint = Point(releasedPoint.x(), releasedPoint.y(), m_drawingAltitude);
 
     insertPointInPart(m_currentPartIndex, -1, releasedPoint);
 
-    Toolkit::ToolResourceProvider::instance()->setMouseCursor(QCursor(Qt::ArrowCursor));
+    ToolResourceProvider::instance()->setMouseCursor(QCursor(Qt::ArrowCursor));
     m_isDrawing = false;
 
     emit sketchCompleted();
@@ -352,7 +354,7 @@ void MarkupController::updateSketch()
  */
 void MarkupController::updateGeoView()
 {
-  GeoView* geoView = Toolkit::ToolResourceProvider::instance()->geoView();
+  GeoView* geoView = ToolResourceProvider::instance()->geoView();
 
   if (!geoView)
     return;

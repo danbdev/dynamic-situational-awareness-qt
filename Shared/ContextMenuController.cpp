@@ -1,4 +1,3 @@
-
 /*******************************************************************************
  *  Copyright 2012-2018 Esri
  *
@@ -20,27 +19,31 @@
 
 #include "ContextMenuController.h"
 
-// dsa app headers
-#include "ObservationReportController.h"
+// C++ API headers
+#include "DynamicEntity.h"
+#include "DynamicEntityObservation.h"
+#include "Graphic.h"
+#include "GraphicsOverlay.h"
+#include "IdentifyGraphicsOverlayResult.h"
+#include "IdentifyLayerResult.h"
+#include "LayerContent.h"
+#include "MapView.h"
+#include "SceneView.h"
+
+// DSA headers
+#include "AppConstants.h"
+#include "CoordinateConversionController.h"
+#include "CoordinateConversionToolProxy.h"
 #include "FollowPositionController.h"
+#include "GeoElementUtils.h"
 #include "GraphicsOverlaysResultsManager.h"
 #include "IdentifyController.h"
 #include "LayerResultsManager.h"
 #include "LineOfSightController.h"
-#include "ViewshedController.h"
-#include "GeoElementUtils.h"
-
-// toolkit headers
-#include "CoordinateConversionController.h"
+#include "ObservationReportController.h"
 #include "ToolManager.h"
 #include "ToolResourceProvider.h"
-
-// C++ API headers
-#include "MapView.h"
-#include "SceneView.h"
-
-// STL headers
-#include <cmath>
+#include "ViewshedController.h"
 
 using namespace Esri::ArcGISRuntime;
 
@@ -57,7 +60,7 @@ const QString ContextMenuController::OBSERVATION_REPORT_OPTION = "Observation";
 /*!
   \class Dsa::ContextMenuController
   \inmodule Dsa
-  \inherits Toolkit::AbstractTool
+  \inherits AbstractTool
   \brief Tool controller for displaying a Context menu.
 
   When the user presses and holds the mouse, a number of tasks are started
@@ -78,36 +81,24 @@ const QString ContextMenuController::OBSERVATION_REPORT_OPTION = "Observation";
   \sa IdentifyController
   \sa ViewshedController
   \sa LineOfSightController
-  \sa Esri::ArcGISRuntime::Toolkit::CoordinateConversionController
+  \sa Esri::ArcGISRuntime::CoordinateConversionController
  */
 
 /*!
   \brief Constructor accepting an optional \a parent.
  */
 ContextMenuController::ContextMenuController(QObject* parent /* = nullptr */):
-  Toolkit::AbstractTool(parent),
+  AbstractTool(parent),
   m_options(new QStringListModel(this))
 {
-  Toolkit::ToolResourceProvider* resourceProvider = Toolkit::ToolResourceProvider::instance();
+  ToolResourceProvider* resourceProvider = ToolResourceProvider::instance();
   // setup connection to handle mouse-clicking in the view (used to trigger the identify tasks)
-  connect(resourceProvider, &Toolkit::ToolResourceProvider::mousePressedAndHeld,
+  connect(resourceProvider, &ToolResourceProvider::mousePressedAndHeld,
           this, &ContextMenuController::onMousePressedAndHeld);
-
-  // setup connection to handle the results of an Identify Layers task
-  connect(resourceProvider, &Toolkit::ToolResourceProvider::identifyLayersCompleted,
-          this, &ContextMenuController::onIdentifyLayersCompleted);
-
-  // setup connection to handle the results of an Identify Graphic Overlays task
-  connect(resourceProvider, &Toolkit::ToolResourceProvider::identifyGraphicsOverlaysCompleted,
-          this, &ContextMenuController::onIdentifyGraphicsOverlaysCompleted);
-
-  // setup connection to handle the results of a screen to location task
-  connect(resourceProvider, &Toolkit::ToolResourceProvider::screenToLocationCompleted,
-          this, &ContextMenuController::onScreenToLocationCompleted);
 
   m_active = true;
 
-  Toolkit::ToolManager::instance().addTool(this);
+  ToolManager::instance().addTool(this);
 }
 
 /*!
@@ -141,141 +132,40 @@ void ContextMenuController::onMousePressedAndHeld(QMouseEvent& event)
   if (!isActive())
     return;
 
-  // only consider left clicks (or taps) on the view.
-  if (event.button() != Qt::MouseButton::LeftButton)
-    return;
-
-  cancelTasks();
   clearOptions();
-  for(const auto& feats : qAsConst(m_contextFeatures))
+  for (const auto& feats : std::as_const(m_contextFeatures))
     qDeleteAll(feats);
   m_contextFeatures.clear();
 
-  for(const auto& graphics : qAsConst(m_contextGraphics))
+  for (const auto& graphics : std::as_const(m_contextGraphics))
     qDeleteAll(graphics);
   m_contextGraphics.clear();
 
-  GeoView* geoView = Toolkit::ToolResourceProvider::instance()->geoView();
+  GeoView* geoView = ToolResourceProvider::instance()->geoView();
   if (!geoView)
     return;
 
   setContextScreenPosition(event.pos());
 
   // start tasks to determine the clicked location
-  SceneView* sceneView = dynamic_cast<SceneView*>(Toolkit::ToolResourceProvider::instance()->geoView());
-  if (sceneView)
+  if (auto* sceneView = dynamic_cast<SceneView*>(ToolResourceProvider::instance()->geoView()); sceneView)
   {
-    m_screenToLocationTask = sceneView->screenToLocation(m_contextScreenPosition.x(), m_contextScreenPosition.y());
-    m_contextBaseSurfaceLocation = sceneView->screenToBaseSurface(m_contextScreenPosition.x(), m_contextScreenPosition.y());
+    sceneView->screenToLocationAsync(m_contextScreenPosition.x(), m_contextScreenPosition.y()).then(this, [this, sceneView](Point point) {
+      setContextLocation(point);
+      m_contextBaseSurfaceLocation = sceneView->screenToBaseSurface(m_contextScreenPosition.x(), m_contextScreenPosition.y());
+      invokeIdentifyOnGeoView();
+    });
   }
-  else
+  else if (auto* mapView = dynamic_cast<MapView*>(ToolResourceProvider::instance()->geoView()); mapView)
   {
-    MapView* mapView = dynamic_cast<MapView*>(Toolkit::ToolResourceProvider::instance()->geoView());
-    if (mapView)
-    {
-      const Point p = mapView->screenToLocation(m_contextScreenPosition.x(), m_contextScreenPosition.y());
-      setContextLocation(p);
-      m_contextBaseSurfaceLocation = p;
-    }
+    const Point point = mapView->screenToLocation(m_contextScreenPosition.x(), m_contextScreenPosition.y());
+    setContextLocation(point);
+    m_contextBaseSurfaceLocation = point;
+    invokeIdentifyOnGeoView();
   }
-
-  // start tasks to determine whether a GeoElement was clicked on
-  m_identifyGraphicsTask = geoView->identifyGraphicsOverlays(m_contextScreenPosition.x(), m_contextScreenPosition.y(), 5.0, false, 1);
-  m_identifyFeaturesTask = geoView->identifyLayers(m_contextScreenPosition.x(), m_contextScreenPosition.y(), 5.0, false, 1);
 
   // accept the event to prevent it being used by other tools etc.
   event.accept();
-}
-
-/*!
-  \internal
-
-  Handle the result of an identify layers task.
- */
-void ContextMenuController::onIdentifyLayersCompleted(const QUuid& taskId, const QList<IdentifyLayerResult*>& identifyResults)
-{
-  if (taskId != m_identifyFeaturesTask.taskId())
-    return;
-
-  LayerResultsManager resultsManager(identifyResults);
-
-  m_identifyFeaturesTask = TaskWatcher();
-
-  // iterate over the results and if we find a GeoElement use it for the current context
-  auto it = resultsManager.m_results.begin();
-  auto itEnd = resultsManager.m_results.end();
-  for (; it != itEnd; ++it)
-  {
-    IdentifyLayerResult* res = *it;
-    if (!res)
-      continue;
-
-    auto geoElements = res->geoElements();
-    // set the GeoElements to be managed by the tool
-    GeoElementUtils::setParent(geoElements, this);
-
-    // add the geoElements to the context hash using the layer name as the key
-    m_contextFeatures.insert(res->layerContent()->name(), geoElements);
-  }
-
-  processGeoElements();
-}
-
-/*!
-  \internal
-
-  Handle the result of an identify graphics overlays task.
- */
-void ContextMenuController::onIdentifyGraphicsOverlaysCompleted(const QUuid& taskId, const QList<IdentifyGraphicsOverlayResult*>& identifyResults)
-{
-  if (taskId != m_identifyGraphicsTask.taskId())
-    return;
-
-  GraphicsOverlaysResultsManager resultsManager(identifyResults);
-
-  m_identifyGraphicsTask = TaskWatcher();
-
-  auto it = resultsManager.m_results.begin();
-  auto itEnd = resultsManager.m_results.end();
-  for (; it != itEnd; ++it)
-  {
-    IdentifyGraphicsOverlayResult* res = *it;
-    if (!res)
-      continue;
-
-    const QList<Graphic*> graphics = res->graphics();
-    if (graphics.isEmpty())
-      continue;
-
-    QList<GeoElement*> geoElements;
-    auto gIt = graphics.begin();
-    auto gEnd = graphics.end();
-    for(; gIt != gEnd; ++gIt)
-    {
-      GeoElement* geoElement = *gIt;
-      GeoElementUtils::setParent(geoElement, this); // set the GeoElements to be managed by the tool
-      geoElements.append(geoElement);
-    }
-
-    // add the geoElements to the context hash using the overlay id as the key
-    m_contextGraphics.insert(res->graphicsOverlay()->overlayId(), geoElements);
-  }
-
-  processGeoElements();
-}
-
-/*!
-  \internal
-
-  Handle the result of a screen to location task.
- */
-void ContextMenuController::onScreenToLocationCompleted(QUuid taskId, const Point& location)
-{
-  if (taskId != m_screenToLocationTask.taskId())
-    return;
-
-  m_screenToLocationTask = TaskWatcher();
-  setContextLocation(location);
 }
 
 /*!
@@ -370,39 +260,9 @@ void ContextMenuController::setResultTitle(const QString& resultTitle)
 
 /*!
   \internal
-
-  Cancels any currently running tasks.
- */
-void ContextMenuController::cancelTasks()
-{
-  cancelIdentifyTasks();
-  m_screenToLocationTask.cancel();
-  m_screenToLocationTask = TaskWatcher();
-}
-
-/*!
-  \internal
-
-  Cancels any currently running identify tasks.
- */
-void ContextMenuController::cancelIdentifyTasks()
-{
-  m_identifyFeaturesTask.cancel();
-  m_identifyFeaturesTask = TaskWatcher();
-  m_identifyGraphicsTask.cancel();
-  m_identifyGraphicsTask = TaskWatcher();
-}
-
-/*!
-  \internal
  */
 void ContextMenuController::processGeoElements()
 {
-  // if either of the identify tasks is still in progress, return.
-  if ((m_identifyFeaturesTask.isValid() && !m_identifyFeaturesTask.isDone()) ||
-      (m_identifyGraphicsTask.isValid() && !m_identifyGraphicsTask.isDone()))
-    return;
-
   if (m_contextFeatures.isEmpty() && m_contextGraphics.isEmpty())
     return;
 
@@ -410,9 +270,9 @@ void ContextMenuController::processGeoElements()
   addOption(IDENTIFY_OPTION);
 
   int pointGraphicsCount = 0;
-  for (const auto& geoElements : qAsConst(m_contextGraphics))
+  for (const auto& geoElements : std::as_const(m_contextGraphics))
   {
-    for (GeoElement* geoElement : geoElements)
+    for (const auto* geoElement : geoElements)
     {
       if (geoElement->geometry().geometryType() == GeometryType::Point)
         pointGraphicsCount++;
@@ -429,9 +289,9 @@ void ContextMenuController::processGeoElements()
   }
 
   // if were have 0 point graphics, check whether we have any point features
-  for (const auto& geoElements : qAsConst(m_contextFeatures))
+  for (const auto& geoElements : std::as_const(m_contextFeatures))
   {
-    for (GeoElement* geoElement : geoElements)
+    for (const auto* geoElement : geoElements)
     {
       if (geoElement && geoElement->geometry().geometryType() == GeometryType::Point)
       {
@@ -440,6 +300,68 @@ void ContextMenuController::processGeoElements()
       }
     }
   }
+}
+
+void ContextMenuController::invokeIdentifyOnGeoView()
+{
+  GeoView* geoView = ToolResourceProvider::instance()->geoView();
+  if (!geoView)
+    return;
+
+  // invoke the identify operations on the geoview for layers and graphics overlays
+  auto layers_identify = geoView->identifyLayersAsync(m_contextScreenPosition, 5.0, false, -1, this);
+  auto graphics_overlay_identify = geoView->identifyGraphicsOverlaysAsync(m_contextScreenPosition, 5.0, false, -1, this);
+
+  QtFuture::whenAll(layers_identify, graphics_overlay_identify).then(this, [this](const QList<IdentifyResultsVariant::FutureType> &identify_results)
+  {
+    for (const IdentifyResultsVariant::FutureType& identify_result : identify_results)
+    {
+      if (identify_result.index() == IdentifyResultsVariant::Types::LAYERS)
+      {
+        LayerResultsManager resultsManager(std::get<IdentifyResultsVariant::Types::LAYERS>(identify_result).result());
+        for (auto* result : resultsManager.m_results)
+        {
+          if (!result)
+            continue;
+
+          auto geoElements = result->geoElements();
+          // set the GeoElements to be managed by the tool
+          GeoElementUtils::setParent(geoElements, this);
+
+          // add the geoElements to the context hash using the layer name as the key
+          m_contextFeatures.insert(result->layerContent()->name(), geoElements);
+        }
+      }
+      else if (identify_result.index() == IdentifyResultsVariant::Types::GRAPHICS)
+      {
+        GraphicsOverlaysResultsManager resultsManager(std::get<IdentifyResultsVariant::Types::GRAPHICS>(identify_result).result());
+        for (auto* result : resultsManager.m_results)
+        {
+          if (!result)
+            continue;
+
+          const auto graphics = result->graphics();
+          if (graphics.isEmpty())
+            continue;
+
+          // don't process the location on the context menu
+          if (result->graphicsOverlay()->overlayId() == AppConstants::LAYER_NAME_SCENEVIEW_LOCATION)
+            continue;
+
+          QList<GeoElement*> geoElements;
+          for(auto* geoElement : graphics)
+          {
+            GeoElementUtils::setParent(geoElement, this); // set the GeoElements to be managed by the tool
+            geoElements.append(geoElement);
+          }
+
+          // add the geoElements to the context hash using the overlay id as the key
+          m_contextGraphics.insert(result->graphicsOverlay()->overlayId(), geoElements);
+        }
+      }
+    }
+    processGeoElements();
+  });
 }
 
 /*!
@@ -493,17 +415,17 @@ void ContextMenuController::selectOption(const QString& option)
   }
   else if (option == IDENTIFY_OPTION)
   {
-    IdentifyController* identifyTool = Toolkit::ToolManager::instance().tool<IdentifyController>();
+    IdentifyController* identifyTool = ToolManager::instance().tool<IdentifyController>();
     if (!identifyTool)
       return;
 
     auto combinedGeoElementsByTitle = m_contextGraphics;
-    combinedGeoElementsByTitle.unite(m_contextFeatures);
+    combinedGeoElementsByTitle.insert(m_contextFeatures);
     identifyTool->showPopups(combinedGeoElementsByTitle);
   }
   else if (option == VIEWSHED_OPTION)
   {
-    ViewshedController* viewshedTool = Toolkit::ToolManager::instance().tool<ViewshedController>();
+    ViewshedController* viewshedTool = ToolManager::instance().tool<ViewshedController>();
     if (!viewshedTool)
       return;
 
@@ -514,14 +436,14 @@ void ContextMenuController::selectOption(const QString& option)
   }
   else if (option == FOLLOW_OPTION)
   {
-    FollowPositionController* followTool = Toolkit::ToolManager::instance().tool<FollowPositionController>();
+    FollowPositionController* followTool = ToolManager::instance().tool<FollowPositionController>();
     if (!followTool)
       return;
 
     // follow the 1st point graphic (should be only 1)
-    for(const auto& geoElements : qAsConst(m_contextGraphics))
+    for(const auto& geoElements : std::as_const(m_contextGraphics))
     {
-      for (GeoElement* geoElement : geoElements)
+      for (auto* geoElement : geoElements)
       {
         if (!geoElement || geoElement->geometry().geometryType() != GeometryType::Point)
           continue;
@@ -533,18 +455,17 @@ void ContextMenuController::selectOption(const QString& option)
   }
   else if (option == COORDINATES_OPTION)
   {
-    Toolkit::CoordinateConversionController* coordinateTool = Toolkit::ToolManager::instance().tool<Toolkit::CoordinateConversionController>();
+    auto coordinateTool = ToolManager::instance().tool<CoordinateConversionToolProxy>();
     if (!coordinateTool)
       return;
 
-    coordinateTool->setRunConversion(true);
-    coordinateTool->setCaptureMode(true);
-    coordinateTool->setPointToConvert(m_contextLocation);
+    coordinateTool->handleClick(m_contextLocation);
+    coordinateTool->controller()->setInPickingMode(true);
     coordinateTool->setActive(true);
   }
   else if (option == LINE_OF_SIGHT_OPTION)
   {
-    LineOfSightController* lineOfSightTool = Toolkit::ToolManager::instance().tool<LineOfSightController>();
+    LineOfSightController* lineOfSightTool = ToolManager::instance().tool<LineOfSightController>();
     if (!lineOfSightTool)
       return;
 
@@ -555,12 +476,21 @@ void ContextMenuController::selectOption(const QString& option)
       for(auto gIt = geoElementsByTitle.cbegin(); gIt != geoElementsByTitle.cend(); ++gIt)
       {
         const QList<GeoElement*>& geoElements = gIt.value();
-        for (GeoElement* geoElement : qAsConst(geoElements))
+        for (auto* geoElement : geoElements)
         {
           if (!geoElement || geoElement->geometry().geometryType() != GeometryType::Point)
             continue;
 
-          lineOfSightTool->lineOfSightFromLocationToGeoElement(geoElement);
+          // identify results of type observation require the dynamic entity they belong to
+          if (auto* dynamicEntityObservation = dynamic_cast<DynamicEntityObservation*>(geoElement); dynamicEntityObservation)
+          {
+            auto* dynamicEntityGeoElement = static_cast<GeoElement*>(dynamicEntityObservation->dynamicEntity());
+            lineOfSightTool->lineOfSightFromLocationToGeoElement(dynamicEntityGeoElement);
+          }
+          else
+          {
+            lineOfSightTool->lineOfSightFromLocationToGeoElement(geoElement);
+          }
         }
       }
     };
@@ -570,7 +500,7 @@ void ContextMenuController::selectOption(const QString& option)
   }
   else if (option == OBSERVATION_REPORT_OPTION)
   {
-    Dsa::ObservationReportController* observationReportTool = Toolkit::ToolManager::instance().tool<Dsa::ObservationReportController>();
+    Dsa::ObservationReportController* observationReportTool = ToolManager::instance().tool<Dsa::ObservationReportController>();
     if (!observationReportTool)
       return;
 
@@ -642,4 +572,3 @@ void ContextMenuController::setContextActive(bool contextRequested)
 
   \brief Signal emitted when the result title changes.
  */
-

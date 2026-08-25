@@ -18,15 +18,32 @@
 // PCH header
 #include "pch.hpp"
 
-// dsa app headers
+// C++ API headers
+#include "PopupManager.h"
+#include "SceneQuickView.h"
+
+// Qt headers
+#include <QCommandLineParser>
+#include <QDir>
+#include <QGuiApplication>
+#include <QObject>
+#include <QQmlEngine>
+#include <QQuickView>
+#include <QSettings>
+
+// Toolkit headers
+#include "Esri/ArcGISRuntime/Toolkit/register.h"
+
+// DSA headers
 #include "AddLocalDataController.h"
 #include "AlertConditionsController.h"
 #include "AlertListController.h"
 #include "AnalysisListController.h"
 #include "AppInfo.h"
 #include "BasemapPickerController.h"
-#include "ObservationReportController.h"
+#include "ConfigurationController.h"
 #include "ContextMenuController.h"
+#include "CoordinateConversionToolProxy.h"
 #include "DsaResources.h"
 #include "FollowPositionController.h"
 #include "Handheld.h"
@@ -38,31 +55,13 @@
 #include "MarkupController.h"
 #include "MessageFeedsController.h"
 #include "NavigationController.h"
+#include "ObservationReportController.h"
 #include "OpenMobileScenePackageController.h"
 #include "OptionsController.h"
+#include "PackageImageProvider.h"
 #include "TableOfContentsController.h"
 #include "ViewedAlertsController.h"
 #include "ViewshedController.h"
-#include "PackageImageProvider.h"
-
-// toolkit headers
-#include "ArcGISCompassController.h"
-#include "ArcGISRuntimeToolkit.h"
-
-// C++ API headers
-#include "ArcGISRuntimeEnvironment.h"
-#include "PopupManager.h"
-#include "SceneQuickView.h"
-
-// Qt headers
-#include <QCommandLineParser>
-#include <QDir>
-#include <QGuiApplication>
-#include <QMessageBox>
-#include <QObject>
-#include <QQmlEngine>
-#include <QQuickView>
-#include <QSettings>
 
 #ifdef Q_OS_WIN
 #include <Windows.h>
@@ -89,17 +88,12 @@
 //------------------------------------------------------------------------------
 
 using namespace Esri::ArcGISRuntime;
-using namespace Esri::ArcGISRuntime::Toolkit;
 
 QObject* dsaStylesProvider(QQmlEngine* engine, QJSEngine* scriptEngine);
 QObject* dsaResourcesProvider(QQmlEngine* engine, QJSEngine* scriptEngine);
 
 int main(int argc, char *argv[])
 {
-#ifndef Q_OS_WIN
-  QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-#endif
-
   QGuiApplication app(argc, argv);
 
   QCoreApplication::setApplicationName(kApplicationName);
@@ -113,61 +107,58 @@ int main(int argc, char *argv[])
   QSettings::setDefaultFormat(kSettingsFormat);
 
   // Register the map view for QML
-  qmlRegisterType<SceneQuickView>("Esri.Handheld", 1, 0, "SceneView");
+  qmlRegisterType<SceneQuickView>("Esri.ArcGISRuntime.OpenSourceApps.Handheld", 1, 1, "SceneView");
   qRegisterMetaType<PopupManager*>("PopupManager*");
 
   // Register the Handheld (QQuickItem) for QML
-  qmlRegisterType<Dsa::Handheld::Handheld>("Esri.Handheld", 1, 0, "Handheld");
-  qmlRegisterType<Dsa::BasemapPickerController>("Esri.DSA", 1, 0, "BasemapPickerController");
-  qmlRegisterType<Dsa::AddLocalDataController>("Esri.DSA", 1, 0, "AddLocalDataController");
-  qmlRegisterType<Dsa::LocationController>("Esri.DSA", 1, 0, "LocationController");
-  qmlRegisterType<Dsa::MessageFeedsController>("Esri.DSA", 1, 0, "MessageFeedsController");
-  qmlRegisterType<Dsa::FollowPositionController>("Esri.DSA", 1, 0, "FollowPositionController");
-  qmlRegisterType<Dsa::TableOfContentsController>("Esri.DSA", 1, 0, "TableOfContentsController");
-  qmlRegisterType<Dsa::NavigationController>("Esri.DSA", 1, 0, "NavigationController");
-  qmlRegisterType<Dsa::MarkupController>("Esri.DSA", 1, 0, "MarkupController");
-  qmlRegisterType<Dsa::ViewshedController>("Esri.DSA", 1, 0, "ViewshedController");
-  qmlRegisterType<Dsa::OptionsController>("Esri.DSA", 1, 0, "OptionsController");
-  qmlRegisterSingletonType<Dsa::Handheld::HandheldStyles>("Esri.DSA", 1, 0, "DsaStyles", &dsaStylesProvider);
-  qmlRegisterSingletonType<Dsa::DsaResources>("Esri.DSA", 1, 0, "DsaResources", &dsaResourcesProvider);
-  qmlRegisterType<Dsa::IdentifyController>("Esri.DSA", 1, 0, "IdentifyController");
-  qmlRegisterType<Dsa::AlertListController>("Esri.DSA", 1, 0, "AlertListController");
-  qmlRegisterType<Dsa::ViewedAlertsController>("Esri.DSA", 1, 0, "ViewedAlertsController");
-  qmlRegisterType<Dsa::LocationTextController>("Esri.DSA", 1, 0, "LocationTextController");
-  qmlRegisterType<Dsa::AlertConditionsController>("Esri.DSA", 1, 0, "AlertConditionsController");
-  qmlRegisterType<Dsa::LineOfSightController>("Esri.DSA", 1, 0, "LineOfSightController");
-  qmlRegisterType<Dsa::ContextMenuController>("Esri.DSA", 1, 0, "ContextMenuController");
-  qmlRegisterType<Dsa::AnalysisListController>("Esri.DSA", 1, 0, "AnalysisListController");
-  qmlRegisterType<Dsa::ObservationReportController>("Esri.DSA", 1, 0, "ObservationReportController");
-  qmlRegisterType<Dsa::OpenMobileScenePackageController>("Esri.DSA", 1, 0, "OpenMobileScenePackageController");
-
-  // Register Toolkit Component Types
-  ArcGISRuntimeToolkit::registerToolkitTypes();
+  qmlRegisterType<Dsa::Handheld::Handheld>("Esri.ArcGISRuntime.OpenSourceApps.Handheld", 1, 1, "Handheld");
+  qmlRegisterType<Dsa::BasemapPickerController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "BasemapPickerController");
+  qmlRegisterType<Dsa::AddLocalDataController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "AddLocalDataController");
+  qmlRegisterType<Dsa::LocationController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "LocationController");
+  qmlRegisterType<Dsa::MessageFeedsController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "MessageFeedsController");
+  qmlRegisterType<Dsa::FollowPositionController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "FollowPositionController");
+  qmlRegisterType<Dsa::TableOfContentsController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "TableOfContentsController");
+  qmlRegisterType<Dsa::NavigationController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "NavigationController");
+  qmlRegisterType<Dsa::MarkupController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "MarkupController");
+  qmlRegisterType<Dsa::ViewshedController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "ViewshedController");
+  qmlRegisterType<Dsa::OptionsController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "OptionsController");
+  qmlRegisterSingletonType<Dsa::Handheld::HandheldStyles>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "DsaStyles", &dsaStylesProvider);
+  qmlRegisterSingletonType<Dsa::DsaResources>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "DsaResources", &dsaResourcesProvider);
+  qmlRegisterType<Dsa::IdentifyController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "IdentifyController");
+  qmlRegisterType<Dsa::AlertListController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "AlertListController");
+  qmlRegisterType<Dsa::ViewedAlertsController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "ViewedAlertsController");
+  qmlRegisterType<Dsa::LocationTextController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "LocationTextController");
+  qmlRegisterType<Dsa::AlertConditionsController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "AlertConditionsController");
+  qmlRegisterType<Dsa::LineOfSightController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "LineOfSightController");
+  qmlRegisterType<Dsa::ContextMenuController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "ContextMenuController");
+  qmlRegisterType<Dsa::AnalysisListController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "AnalysisListController");
+  qmlRegisterType<Dsa::ObservationReportController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "ObservationReportController");
+  qmlRegisterType<Dsa::OpenMobileScenePackageController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "OpenMobileScenePackageController");
+  qmlRegisterType<Dsa::CoordinateConversionToolProxy>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "CoordinateConversionToolProxy");
+  qmlRegisterType<Dsa::ConfigurationController>("Esri.ArcGISRuntime.OpenSourceApps.DSA", 1, 1, "ConfigurationController");
 
   // Initialize application view
   QQuickView view;
   view.setResizeMode(QQuickView::SizeRootObjectToView);
 
-  view.engine()->addImageProvider(QStringLiteral("packages"), new Dsa::PackageImageProvider());
+  view.engine()->addImageProvider(QStringLiteral("packages"), new Dsa::PackageImageProvider);
+
+  Esri::ArcGISRuntime::Toolkit::registerComponents(*view.engine());
 
 #ifndef DEPLOYMENT_BUILD
   // Add the import Path
   view.engine()->addImportPath(QDir(QCoreApplication::applicationDirPath()).filePath("qml"));
   QString arcGISRuntimeImportPath = QUOTE(ARCGIS_RUNTIME_IMPORT_PATH);
-  QString arcGISToolkitImportPath = QUOTE(ARCGIS_TOOLKIT_IMPORT_PATH);
 
 #if defined(LINUX_PLATFORM_REPLACEMENT)
   // on some linux platforms the string 'linux' is replaced with 1
   // fix the replacement paths which were created
   QString replaceString = QUOTE(LINUX_PLATFORM_REPLACEMENT);
   arcGISRuntimeImportPath = arcGISRuntimeImportPath.replace(replaceString, "linux", Qt::CaseSensitive);
-  arcGISToolkitImportPath = arcGISToolkitImportPath.replace(replaceString, "linux", Qt::CaseSensitive);
 #endif
 
   // Add the Runtime and Extras path
   view.engine()->addImportPath(arcGISRuntimeImportPath);
-  // Add the Toolkit path
-  view.engine()->addImportPath(arcGISToolkitImportPath);
 #endif // DEPLOYMENT_BUILD
 
   // To quit via Qt.quit() from QML, you must connect the QQmlEngine::quit()
@@ -233,5 +224,6 @@ QObject* dsaStylesProvider(QQmlEngine* engine, QJSEngine*)
 QObject* dsaResourcesProvider(QQmlEngine* engine, QJSEngine*)
 {
   static Dsa::DsaResources* dsaResources = new Dsa::DsaResources(engine);
+  dsaResources->setArcGISMapsSDKVersion(QUOTE(ARCGIS_MAPS_SDK_VERSION));
   return dsaResources;
 }

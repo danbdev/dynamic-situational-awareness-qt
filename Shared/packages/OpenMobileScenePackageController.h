@@ -17,7 +17,7 @@
 #ifndef OPENMOBILESCENEPACKAGECONTROLLER_H
 #define OPENMOBILESCENEPACKAGECONTROLLER_H
 
-// toolkit headers
+// dsa headers
 #include "AbstractTool.h"
 
 // Qt headers
@@ -29,18 +29,16 @@
 
 class QImage;
 
-namespace Esri {
-namespace ArcGISRuntime {
-class MobileScenePackage;
-class Scene;
-}
+namespace Esri::ArcGISRuntime {
+  class MobileScenePackage;
+  class Scene;
 }
 
 namespace Dsa {
 
 class MobileScenePackagesListModel;
 
-class OpenMobileScenePackageController : public Esri::ArcGISRuntime::Toolkit::AbstractTool
+class OpenMobileScenePackageController : public AbstractTool
 {
   Q_OBJECT
 
@@ -54,14 +52,13 @@ public:
   static const QString SCENE_INDEX_PROPERTYNAME;
 
   explicit OpenMobileScenePackageController(QObject* parent = nullptr);
-  ~OpenMobileScenePackageController();
+  ~OpenMobileScenePackageController() override;
 
   QString toolName() const override;
   void setProperties(const QVariantMap& properties) override;
 
   Q_INVOKABLE void selectPackageName(const QString& newPackageName);
   Q_INVOKABLE void selectScene(int newSceneIndex);
-  Q_INVOKABLE void unpack();
 
   QString packageDataPath() const;
   bool setPackageDataPath(const QString& dataPath);
@@ -76,6 +73,8 @@ public:
 
   bool userSelected() const;
 
+  bool hasActiveScene() const;
+
 signals:
   void toolErrorOccurred(const QString& errorMessage, const QString& additionalMessage);
   void packageDataPathChanged();
@@ -83,9 +82,6 @@ signals:
   void packageIndexChanged();
   void imageReady(const QString& packageName, const QImage& packageImage);
   void packagesChanged();
-
-private slots:
-  void handleIsDirectReadSupportedCompleted(QUuid taskId, bool directReadSupported);
 
 private:
   void findPackage();
@@ -98,8 +94,6 @@ private:
 
   QString combinedPackagePath() const;
 
-  static QString getPackedName(const QString& packageName);
-  static QString getUnpackedName(const QString& packageName);
   QString pathInPackagesDirectory(const QString& packageName) const;
 
   Esri::ArcGISRuntime::MobileScenePackage* getPackage(const QString& packageName);
@@ -107,7 +101,6 @@ private:
 
   static const QString MSPK_EXTENSION;
   static const QString MMPK_EXTENSION;
-  static const QString UNPACKED_SUFFIX;
 
   QString m_packageDataPath;
   QString m_currentPackageName;
@@ -116,8 +109,6 @@ private:
   Esri::ArcGISRuntime::MobileScenePackage* m_mspk = nullptr;
   QHash<QUuid, QString> m_directReadTasks;
   QHash<QString, Esri::ArcGISRuntime::MobileScenePackage*> m_packages;
-  QMetaObject::Connection m_mspkInstanceUnpackConn;
-  QMetaObject::Connection m_mspkInstanceDirectReadConn;
   bool m_userSelected = false;
 };
 

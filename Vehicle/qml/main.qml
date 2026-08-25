@@ -14,15 +14,14 @@
  *  limitations under the License.
  ******************************************************************************/
 
-import QtQuick 2.9
-import QtQuick.Controls 2.2
-import QtQuick.Controls.Material 2.2
-import QtQuick.Window 2.2
-import QtQml.Models 2.2
-import Esri.DSA 1.0
-import Esri.Vehicle 1.0
-import Esri.ArcGISRuntime.Toolkit.Controls 100.5
-import Esri.ArcGISRuntime.Toolkit.Controls.CppApi 100.5
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Controls.Material
+import QtQuick.Window
+import QtQml.Models
+import Esri.ArcGISRuntime.OpenSourceApps.DSA
+import Esri.ArcGISRuntime.OpenSourceApps.Vehicle
+import Esri.ArcGISRuntime.Toolkit as Toolkit
 
 Vehicle {
     id: appRoot
@@ -39,10 +38,15 @@ Vehicle {
     signal closeDialogAccepted();
     signal inputDialogAccepted(var input, var index);
     signal markupLayerReceived(var path, var overlayVisible);
+    property bool configurationsChanged: false
 
     LocationController {
         id: locationController
         enabled: true
+    }
+
+    ConfigurationController {
+        id: configurationController
     }
 
     PrimaryToolbar {
@@ -167,19 +171,25 @@ Vehicle {
             radius: hudRadius
         }
 
-        ArcGISCompass {
+        Toolkit.NorthArrow {
             id: compass
+            geoView: sceneView
             anchors {
                 horizontalCenter: navTool.horizontalCenter
                 verticalCenter: followHud.verticalCenter
                 margins: 10 * scaleFactor
             }
-            autoHideCompass: false
             width: DsaStyles.primaryIconSize * scaleFactor
             height: width
+            autoHide: false;
         }
 
-        CoordinateConversion {
+        CoordinateConversionToolProxy {
+            id: dsaCoordinateController
+            inInputMode: coordinateConversion.inInputMode
+        }
+
+        Toolkit.CoordinateConversion {
             id: coordinateConversion
             anchors {
                 bottom: sceneView.attributionTop
@@ -188,16 +198,26 @@ Vehicle {
                 margins: hudMargins
             }
 
-            objectName: "coordinateConversion"
-            visible: false
             geoView: sceneView
-            highlightColor : Material.accent
-            textColor: Material.foreground
-            backgroundColor: Material.background
-            fontSize: DsaStyles.toolFontPixelSize
-            fontFamily: DsaStyles.fontFamily
-            backgroundOpacity: hudOpacity
-            radius: hudRadius
+            controller: dsaCoordinateController.controller
+            inputFormat: dsaCoordinateController.inputFormat
+            visible: dsaCoordinateController.active
+
+            palette {
+                text: Material.foreground
+                highlight: Material.accent
+            }
+
+            font {
+                family: DsaStyles.fontFamily
+                pixelSize: DsaStyles.toolFontPixelSize
+            }
+
+            background: Rectangle {
+                color: Material.background
+                opacity: hudOpacity
+                radius: hudRadius
+            }
 
             onVisibleChanged: {
                 if (!visible)
@@ -222,7 +242,7 @@ Vehicle {
                 bottom: sceneView.attributionTop
             }
             width: 56 * scaleFactor
-            appTitle: "DSA - V"            
+            appTitle: "DSA - V"
 
             onSettingsClicked: optionsTool.visible = true;
             onAboutClicked: aboutTool.visible = true;
@@ -357,18 +377,20 @@ Vehicle {
             }
         }
 
-        PopupStackView {
+        Toolkit.PopupStackView {
             id: identifyResults
             anchors {
-                right: parent.right
                 top: sceneView.top
+                right: sceneView.right
                 bottom: sceneView.attributionTop
             }
-            backgroundColor: Material.primary
-            attributeNameTextColor: Material.foreground
-            attributeValueTextColor: Material.foreground
-            titleTextColor: Material.foreground
-            closeButtonColor: Material.foreground
+            palette {
+                text: Material.foreground
+            }
+            background: Rectangle {
+                color: Material.primary
+            }
+            visible: false
         }
 
         Drawer {
@@ -477,15 +499,14 @@ Vehicle {
         }
 
         onPopupManagersChanged: {
-            identifyResults.dismiss();
-            identifyResults.popupManagers = popupManagers;
-
-            if (popupManagers.length > 0)
-                identifyResults.show();
+            if (popupManagers.length > 0) {
+                identifyResults.popupManagers = popupManagers;
+                identifyResults.visible = true;
+            }
         }
     }
 
-    onErrorOccurred: {
+    onErrorOccurred: (message) => {
         // if the parent is null, the app is in a loading state and not yet ready to display errors
         msgDialog.title = "Error"
         if (parent) {
@@ -500,6 +521,15 @@ Vehicle {
     onParentChanged: {
         if (parent && msgDialog.informativeText.length > 0)
             msgDialog.open();
+
+        // skip if for any reason this method is called again
+        if (configurationsChanged)
+            return;
+
+        // set the skip flag on first run and prompt for download if nothing was available on device
+        configurationsChanged = true;
+        if (parent && !configurationController.configurationIsAvailable)
+            configurationDownloadDialog.open()
     }
 
     Options {
@@ -565,5 +595,18 @@ Vehicle {
 
         onAccepted: markupLayerReceived(path, true);
         onRejected: markupLayerReceived(path, false);
+    }
+
+    DsaYesNoDialog {
+        id: configurationDownloadDialog
+        informativeText: "Download the default configuration data from Esri (~450mb)?"
+        onAccepted: showConfigurations(true);
+        onRejected: showConfigurations(false);
+    }
+    function showConfigurations(downloadDefaultData) {
+        if (downloadDefaultData)
+            configurationController.downloadDefaultData();
+
+        optionsTool.showConfigurationsTab();
     }
 }

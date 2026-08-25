@@ -1,4 +1,3 @@
-
 /*******************************************************************************
  *  Copyright 2012-2018 Esri
  *
@@ -20,24 +19,31 @@
 
 #include "TableOfContentsController.h"
 
-// dsa app headers
-#include "DrawOrderLayerListModel.h"
-#include "DsaUtility.h"
-#include "MarkupLayer.h"
-
-// toolkit headers
-#include "ToolManager.h"
-#include "ToolResourceProvider.h"
-
 // C++ API headers
-#include "FeatureLayer.h"
+#include "Envelope.h"
+#include "Error.h"
+#include "FeatureCollection.h"
 #include "FeatureCollectionLayer.h"
+#include "FeatureCollectionTable.h"
+#include "FeatureCollectionTableListModel.h"
+#include "FeatureLayer.h"
+#include "FeatureTable.h"
 #include "GeoView.h"
 #include "LayerListModel.h"
+#include "MapTypes.h"
+#include "Raster.h"
 #include "RasterLayer.h"
+#include "Viewpoint.h"
 
 // Qt headers
 #include <QFileInfo>
+#include <QFuture>
+
+// DSA headers
+#include "DrawOrderLayerListModel.h"
+#include "MarkupLayer.h"
+#include "ToolManager.h"
+#include "ToolResourceProvider.h"
 
 using namespace Esri::ArcGISRuntime;
 
@@ -46,7 +52,7 @@ namespace Dsa {
 /*!
   \class Dsa::TableOfContentsController
   \inmodule Dsa
-  \inherits Toolkit::AbstractTool
+  \inherits AbstractTool
   \brief Tool controller for managing the table of contents for operational layers.
 
   \sa Esri::ArcGISRuntime::LayerListModel
@@ -56,15 +62,15 @@ namespace Dsa {
   \brief Constructor taking an optional \a parent.
  */
 TableOfContentsController::TableOfContentsController(QObject* parent /* = nullptr */):
-  Toolkit::AbstractTool(parent)
+  AbstractTool(parent)
 {
-  connect(Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::mapChanged,
+  connect(ToolResourceProvider::instance(), &ToolResourceProvider::mapChanged,
           this, &TableOfContentsController::updateLayerListModel);
-  connect(Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::sceneChanged,
+  connect(ToolResourceProvider::instance(), &ToolResourceProvider::sceneChanged,
           this, &TableOfContentsController::updateLayerListModel);
   updateLayerListModel();
 
-  Toolkit::ToolManager::instance().addTool(this);
+  ToolManager::instance().addTool(this);
 }
 
 /*!
@@ -100,7 +106,7 @@ void TableOfContentsController::zoomTo(int layerIndex)
   if (!layer)
     return;
 
-  GeoView* geoView = Toolkit::ToolResourceProvider::instance()->geoView();
+  GeoView* geoView = ToolResourceProvider::instance()->geoView();
   if (!geoView)
     return;
 
@@ -112,7 +118,7 @@ void TableOfContentsController::zoomTo(int layerIndex)
   else
     extent = layer->fullExtent();
 
-  geoView->setViewpoint(Viewpoint(extent));
+  geoView->setViewpointAsync(Viewpoint(extent));
 }
 
 /*!
@@ -309,7 +315,7 @@ QString TableOfContentsController::toolName() const
  */
 void TableOfContentsController::updateLayerListModel()
 {
-  auto operationalLayers = Toolkit::ToolResourceProvider::instance()->operationalLayers();
+  auto operationalLayers = ToolResourceProvider::instance()->operationalLayers();
   if (operationalLayers == m_layerListModel)
     return;
 

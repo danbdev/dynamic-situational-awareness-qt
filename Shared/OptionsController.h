@@ -17,23 +17,21 @@
 #ifndef OPTIONSCONTROLLER_H
 #define OPTIONSCONTROLLER_H
 
-// toolkit headers
+// dsa headers
 #include "AbstractTool.h"
 
 // Qt headers
 #include <QObject>
 
-namespace Esri {
-namespace ArcGISRuntime {
-class DictionaryRenderer;
-}
+namespace Esri::ArcGISRuntime {
+  class DictionaryRenderer;
 }
 
 namespace Dsa {
 
 class LocationTextController;
 
-class OptionsController : public Esri::ArcGISRuntime::Toolkit::AbstractTool
+class OptionsController : public AbstractTool
 {
   Q_OBJECT
 

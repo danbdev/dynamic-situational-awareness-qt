@@ -17,7 +17,7 @@
 #ifndef MARKUPBROADCAST_H
 #define MARKUPBROADCAST_H
 
-// toolkit headers
+// dsa headers
 #include "AbstractTool.h"
 
 class QJsonObject;
@@ -29,7 +29,7 @@ namespace Dsa
 class DataSender;
 class DataListener;
 
-class MarkupBroadcast : public Esri::ArcGISRuntime::Toolkit::AbstractTool
+class MarkupBroadcast : public AbstractTool
 {
   Q_OBJECT
 

@@ -24,8 +24,6 @@
 // toolkit headers
 #include "ToolManager.h"
 
-using namespace Esri::ArcGISRuntime::Toolkit;
-
 namespace Dsa {
 
 /*!
@@ -40,9 +38,8 @@ namespace Dsa {
 /*!
   \brief Constructor taking an optional \a parent.
  */
-PackageImageProvider::PackageImageProvider(QObject* parent /*= nullptr*/) :
+PackageImageProvider::PackageImageProvider() :
   QQuickImageProvider(QQuickImageProvider::Image),
-  QObject(parent),
   m_defaultImage(":/Resources/AppIcon.png")
 {
   // Find the OpenMobileScenePackageController and connect to the imageReady signal

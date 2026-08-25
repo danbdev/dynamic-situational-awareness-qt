@@ -20,15 +20,22 @@
 
 #include "FollowPositionController.h"
 
-// toolkit headers
-#include "ToolManager.h"
-#include "ToolResourceProvider.h"
-
 // C++ API headers
 #include "GlobeCameraController.h"
+#include "Graphic.h"
+#include "GraphicListModel.h"
+#include "GraphicsOverlay.h"
+#include "GraphicsOverlayListModel.h"
+#include "LocationDisplay.h"
 #include "MapView.h"
+#include "MapViewTypes.h"
 #include "OrbitGeoElementCameraController.h"
 #include "SceneView.h"
+
+// DSA headers
+#include "AppConstants.h"
+#include "ToolManager.h"
+#include "ToolResourceProvider.h"
 
 using namespace Esri::ArcGISRuntime;
 
@@ -37,7 +44,7 @@ namespace Dsa {
 /*!
   \class Dsa::FollowPositionController
   \inmodule Dsa
-  \inherits Toolkit::AbstractTool
+  \inherits AbstractTool
   \brief Tool controller for managing the follow navigation modes.
  */
 
@@ -46,14 +53,14 @@ namespace Dsa {
  */
 
 FollowPositionController::FollowPositionController(QObject* parent) :
-  Toolkit::AbstractTool(parent)
+  AbstractTool(parent)
 {
-  connect(Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::geoViewChanged, this,
+  connect(ToolResourceProvider::instance(), &ToolResourceProvider::geoViewChanged, this,
           &FollowPositionController::updateGeoView);
 
   updateGeoView();
 
-  Toolkit::ToolManager::instance().addTool(this);
+  ToolManager::instance().addTool(this);
 }
 
 /*!
@@ -139,7 +146,7 @@ void FollowPositionController::handleNewMode()
  */
 void FollowPositionController::updateGeoView()
 {
-  GeoView* geoView = Toolkit::ToolResourceProvider::instance()->geoView();
+  GeoView* geoView = ToolResourceProvider::instance()->geoView();
   if (geoView)
     init(geoView);
 }
@@ -208,14 +215,13 @@ GraphicListModel* FollowPositionController::locationGraphicsModel() const
   if (overlays->isEmpty())
     return nullptr;
 
-  QString locationOverlayId("SCENEVIEWLOCATIONOVERLAY");
   for (int i = 0; i < overlays->rowCount(); ++i)
   {
     GraphicsOverlay* candidateOverlay = overlays->at(i);
     if (!candidateOverlay)
       continue;
 
-    if (candidateOverlay->overlayId() != locationOverlayId)
+    if (candidateOverlay->overlayId() != AppConstants::LAYER_NAME_SCENEVIEW_LOCATION)
       continue;
 
     return candidateOverlay->graphics();

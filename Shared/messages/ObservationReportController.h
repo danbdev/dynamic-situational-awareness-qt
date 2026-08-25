@@ -17,19 +17,17 @@
 #ifndef OBSERVATIONREPORTCONTROLLER_H
 #define OBSERVATIONREPORTCONTROLLER_H
 
-// toolkit headers
-#include "AbstractTool.h"
-
 // C++ API headers
 #include "Point.h"
+
+// dsa headers
+#include "AbstractTool.h"
 
 class QDateTime;
 class QMouseEvent;
 
-namespace Esri {
-namespace ArcGISRuntime {
+namespace Esri::ArcGISRuntime {
   class GeoView;
-}
 }
 
 namespace Dsa {
@@ -38,7 +36,7 @@ class DataSender;
 
 class PointHighlighter;
 
-class ObservationReportController : public Esri::ArcGISRuntime::Toolkit::AbstractTool
+class ObservationReportController : public AbstractTool
 {
   Q_OBJECT
 

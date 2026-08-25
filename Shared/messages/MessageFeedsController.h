@@ -17,19 +17,20 @@
 #ifndef MESSAGEFEEDSCONTROLLER_H
 #define MESSAGEFEEDSCONTROLLER_H
 
-// toolkit headers
-#include "AbstractTool.h"
-
 // Qt headers
-#include <QAbstractListModel>
 #include <QVariantList>
 
-namespace Esri {
-  namespace ArcGISRuntime {
-    class GeoView;
-    class Renderer;
-    enum class SurfacePlacement;
-  }
+// DSA headers
+#include "AbstractTool.h"
+
+Q_MOC_INCLUDE("qabstractitemmodel.h")
+
+class QAbstractListModel;
+
+namespace Esri::ArcGISRuntime {
+  class GeoView;
+  class Renderer;
+  enum class SurfacePlacement;
 }
 
 namespace Dsa {
@@ -40,7 +41,7 @@ class LocationBroadcast;
 
 class MessageFeedListModel;
 
-class MessageFeedsController : public Esri::ArcGISRuntime::Toolkit::AbstractTool
+class MessageFeedsController : public AbstractTool
 {
   Q_OBJECT
 

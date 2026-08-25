@@ -41,11 +41,15 @@
 #include "GeoPackageRaster.h"
 #include "Geodatabase.h"
 #include "GeodatabaseFeatureTable.h"
+#include "KmlDataset.h"
 #include "KmlLayer.h"
+#include "LayerListModel.h"
 #include "Raster.h"
 #include "RasterLayer.h"
 #include "Scene.h"
 #include "ShapefileFeatureTable.h"
+#include "TileCache.h"
+#include "VectorTileCache.h"
 
 // Qt headers
 #include <QDir>
@@ -69,7 +73,7 @@ using namespace Esri::ArcGISRuntime;
 /*!
   \class Dsa::LayerCacheManager
   \inmodule Dsa
-  \inherits Toolkit::AbstractTool
+  \inherits AbstractTool
   \brief Tool controller responsible for managing the layers in the app.
  */
 
@@ -77,22 +81,22 @@ using namespace Esri::ArcGISRuntime;
  \brief Constructor that takes an optional \a parent.
  */
 LayerCacheManager::LayerCacheManager(QObject* parent) :
-  Toolkit::AbstractTool(parent)
+  AbstractTool(parent)
 {
   // obtain Add Local Data Controller
-  m_localDataController = Toolkit::ToolManager::instance().tool<AddLocalDataController>();
+  m_localDataController = ToolManager::instance().tool<AddLocalDataController>();
 
   // connect to new scene for cases where a new scene is set on the SceneView (via MobileScenePackage)
-  connect(Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::sceneChanged, this, [this]()
+  connect(ToolResourceProvider::instance(), &ToolResourceProvider::sceneChanged, this, [this]()
   {
-    m_scene = Toolkit::ToolResourceProvider::instance()->scene();
+    m_scene = ToolResourceProvider::instance()->scene();
     m_layers = QJsonArray();
     m_inputLayerJsonArray = QJsonArray();
     m_initialLayerCache.clear();
     connectSignals();
 
     // only add initial layers on initial load. Once the user selects a new scene, the layer list will be cleared
-    auto mobileSceneTool = Toolkit::ToolManager::instance().tool<OpenMobileScenePackageController>();
+    auto mobileSceneTool = ToolManager::instance().tool<OpenMobileScenePackageController>();
     if (!mobileSceneTool)
       return;
 
@@ -106,7 +110,7 @@ LayerCacheManager::LayerCacheManager(QObject* parent) :
   // connect to the initial default scene created in code
   connectSignals();
 
-  Toolkit::ToolManager::instance().addTool(this);
+  ToolManager::instance().addTool(this);
 }
 
 /*!
@@ -255,8 +259,10 @@ void LayerCacheManager::layerToJson(Layer* layer)
     layerPath = kmlUrl.isLocalFile() ? kmlUrl.toLocalFile() : kmlUrl.toString();
   }
 
-  // Don't serialize invalid layers
-  if (layerPath.isEmpty())
+  // Don't serialize invalid layers or local files that don't actually exist in the file system.
+  auto isMissing = QUrl::fromUserInput(layerPath, QDir::currentPath(), QUrl::AssumeLocalFile).isLocalFile()
+                 && !QFileInfo(layerPath).exists();
+  if (layerPath.isEmpty() || isMissing)
   {
     return;
   }
@@ -264,6 +270,9 @@ void LayerCacheManager::layerToJson(Layer* layer)
   // Don't serialize data in excluded path locations
   for (const auto& excludedPath : m_excludedPaths)
   {
+    if (excludedPath.isEmpty())
+      continue;
+
     if (layerPath.startsWith(excludedPath))
       return;
   }
@@ -287,7 +296,7 @@ void LayerCacheManager::layerToJson(Layer* layer)
 */
 void LayerCacheManager::onLayerListChanged()
 {
-  m_scene = Toolkit::ToolResourceProvider::instance()->scene();
+  m_scene = ToolResourceProvider::instance()->scene();
   if (!m_initialLoadCompleted)
     return;
 
@@ -375,7 +384,7 @@ void LayerCacheManager::addLayers(const QVariantMap& properties)
 void LayerCacheManager::connectSignals()
 {
   // obtain Scene and connect slot
-  m_scene = Toolkit::ToolResourceProvider::instance()->scene();
+  m_scene = ToolResourceProvider::instance()->scene();
   if (!m_scene)
     return;
 
@@ -397,8 +406,8 @@ void LayerCacheManager::connectSignals()
 
   // connect signals
   m_dataChangedConnection = connect(m_scene->operationalLayers(), &LayerListModel::dataChanged, this, &LayerCacheManager::onLayerListChanged); // layer objects have been added or changed
-  m_layerAddedConnection = connect(m_scene->operationalLayers(), &LayerListModel::layerAdded, this, &LayerCacheManager::onLayerListChanged); // layer objects have been added
-  m_layerRemovedConnection = connect(m_scene->operationalLayers(), &LayerListModel::layerRemoved, this, &LayerCacheManager::onLayerListChanged); // layer has been removed
+  m_layerAddedConnection = connect(m_scene->operationalLayers(), &LayerListModel::itemAdded, this, &LayerCacheManager::onLayerListChanged); // layer objects have been added
+  m_layerRemovedConnection = connect(m_scene->operationalLayers(), &LayerListModel::itemRemoved, this, &LayerCacheManager::onLayerListChanged); // layer has been removed
   m_layoutChangedConnection = connect(m_scene->operationalLayers(), &LayerListModel::layoutChanged, this, &LayerCacheManager::onLayerListChanged); // order changed
   m_modelResetConnection = connect(m_scene->operationalLayers(), &LayerListModel::modelReset, this, &LayerCacheManager::onLayerListChanged); // order changed
 
@@ -414,7 +423,7 @@ void LayerCacheManager::connectSignals()
   // cache the created layers
   m_layerCreatedConnection = connect(m_localDataController, &AddLocalDataController::layerCreated, this, [this](int layerIndex, Layer* layer)
   {
-    m_scene = Toolkit::ToolResourceProvider::instance()->scene();
+    m_scene = ToolResourceProvider::instance()->scene();
     m_initialLayerCache.insert(layerIndex, layer);
     const int layerCount = m_inputLayerJsonArray.size();
     emit jsonToLayerCompleted(layer);

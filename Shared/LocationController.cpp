@@ -29,11 +29,14 @@
 #include "ToolResourceProvider.h"
 
 // C++ API headers
+#include "Camera.h"
 #include "GraphicsOverlay.h"
+#include "GraphicsOverlayListModel.h"
 #include "ModelSceneSymbol.h"
 #include "Point.h"
 #include "SceneQuickView.h"
-#include "SimpleRenderer.h"
+#include "SpatialReference.h"
+#include "SymbolTypes.h"
 
 // Qt headers
 #include <QCompass>
@@ -54,7 +57,7 @@ const QString LocationController::RESOURCE_DIRECTORY_PROPERTYNAME = "ResourceDir
 /*!
   \class Dsa::LocationController
   \inmodule Dsa
-  \inherits Toolkit::AbstractTool
+  \inherits AbstractTool
   \brief Tool controller for handling the current location.
  */
 
@@ -62,15 +65,15 @@ const QString LocationController::RESOURCE_DIRECTORY_PROPERTYNAME = "ResourceDir
   \brief Constructor for a model taking an optional \a parent.
  */
 LocationController::LocationController(QObject* parent) :
-  Toolkit::AbstractTool(parent),
+  AbstractTool(parent),
   m_locationDisplay3d(new LocationDisplay3d(this))
 {
-  connect(this, &LocationController::locationChanged, Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::onLocationChanged);
-  connect(Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::geoViewChanged, this, &LocationController::updateGeoView);
+  connect(this, &LocationController::locationChanged, ToolResourceProvider::instance(), &ToolResourceProvider::onLocationChanged);
+  connect(ToolResourceProvider::instance(), &ToolResourceProvider::geoViewChanged, this, &LocationController::updateGeoView);
 
   updateGeoView();
 
-  Toolkit::ToolManager::instance().addTool(this);
+  ToolManager::instance().addTool(this);
 }
 
 /*!
@@ -382,22 +385,17 @@ void LocationController::setRelativeHeadingSceneView(SceneQuickView* sceneView)
  */
 void LocationController::updateGeoView()
 {
-  GeoView* geoView = Toolkit::ToolResourceProvider::instance()->geoView();
+  GeoView* geoView = ToolResourceProvider::instance()->geoView();
   if (geoView)
   {
     geoView->graphicsOverlays()->append(m_locationDisplay3d->locationOverlay());
 
     constexpr float symbolSize = 25.0;
-    constexpr double rangeMultiplier = 1.04; // the closer to 1.0, the smoother the transitions
-    constexpr double maxRange = 10000000.0;
 
-    const QUrl modelPath = modelSymbolPath();
-
-    ModelSceneSymbol* modelSceneSymbol = new ModelSceneSymbol(modelPath, this);
+    ModelSceneSymbol* modelSceneSymbol = new ModelSceneSymbol(modelSymbolPath(), this);
     modelSceneSymbol->setWidth(symbolSize);
     modelSceneSymbol->setDepth(symbolSize);
     modelSceneSymbol->setSymbolSizeUnits(SymbolSizeUnits::DIPs);
-
     m_locationDisplay3d->setDefaultSymbol(modelSceneSymbol);
   }
 }
@@ -415,47 +413,55 @@ void LocationController::setIconDataPath(const QString& dataPath)
 }
 
 /*!
-  \brief Returns the URL of the model symbol used for location display.
+  \brief Returns the QImage of the navigation icon used for location display.
  */
+QImage LocationController::iconImage() const
+{
+  const QString imagePath = m_iconDataPath + "/navigation.png";
+
+  return (QFile::exists(imagePath)) ? QImage(imagePath)
+                                    : QImage(":Resources/icons/xhdpi/navigation.png");
+}
+
 QUrl LocationController::modelSymbolPath() const
 {
-  // both files are needed: LocationDisplay.dae
-  // and navigation.png and both must be local (not resources)  
-  QString modelPath = m_iconDataPath + "/LocationDisplay.dae";
-  QString imagePath = m_iconDataPath + "/navigation.png";
+    // both files are needed: LocationDisplay.dae
+    // and navigation.png and both must be local (not resources)
+    QString modelPath = m_iconDataPath + "/LocationDisplay.dae";
+    QString imagePath = m_iconDataPath + "/navigation.png";
 
-  if (QFile::exists(modelPath) && QFile::exists(imagePath))
+    if (QFile::exists(modelPath) && QFile::exists(imagePath))
+      return QUrl::fromLocalFile(modelPath);
+
+    const QString tempPath = QDir::tempPath();
+    modelPath = tempPath + "/LocationDisplay.dae";
+    imagePath = tempPath + "/navigation.png";
+
+    // check if we've already copied them to temp
+    if (QFile::exists(modelPath) && QFile::exists(imagePath))
+      return QUrl::fromLocalFile(modelPath);
+
+    // if they're not both available, save both from resources to temp
+    // and access from there
+    QFile modelResource(":Resources/LocationDisplay.dae");
+    QFile imageResource(":Resources/icons/xhdpi/navigation.png");
+
+    modelResource.open(QIODevice::ReadOnly);
+    imageResource.open(QIODevice::ReadOnly);
+
+    QFile modelFileTemp(modelPath);
+    QFile imageFileTemp(imagePath);
+
+    modelFileTemp.open(QIODevice::WriteOnly);
+    imageFileTemp.open(QIODevice::WriteOnly);
+
+    modelFileTemp.write(modelResource.readAll());
+    imageFileTemp.write(imageResource.readAll());
+
+    for (QFile* file : { &modelResource, &imageResource, &modelFileTemp, &imageFileTemp })
+      file->close();
+
     return QUrl::fromLocalFile(modelPath);
-
-  const QString tempPath = QDir::tempPath();
-  modelPath = tempPath + "/LocationDisplay.dae";
-  imagePath = tempPath + "/navigation.png";
-
-  // check if we've already copied them to temp
-  if (QFile::exists(modelPath) && QFile::exists(imagePath))
-    return QUrl::fromLocalFile(modelPath);
-
-  // if they're not both available, save both from resources to temp
-  // and access from there
-  QFile modelResource(":Resources/LocationDisplay.dae");
-  QFile imageResource(":Resources/icons/xhdpi/navigation.png");
-
-  modelResource.open(QIODevice::ReadOnly);
-  imageResource.open(QIODevice::ReadOnly);
-
-  QFile modelFileTemp(modelPath);
-  QFile imageFileTemp(imagePath);
-
-  modelFileTemp.open(QIODevice::WriteOnly);
-  imageFileTemp.open(QIODevice::WriteOnly);
-
-  modelFileTemp.write(modelResource.readAll());
-  imageFileTemp.write(imageResource.readAll());
-
-  for (QFile* file : { &modelResource, &imageResource, &modelFileTemp, &imageFileTemp })
-    file->close();
-
-  return QUrl::fromLocalFile(modelPath);
 }
 
 } // Dsa
@@ -498,4 +504,3 @@ QUrl LocationController::modelSymbolPath() const
   An \a errorMessage and \a additionalMessage are passed through as parameters, describing
   the error that occurred.
  */
-

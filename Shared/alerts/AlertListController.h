@@ -17,29 +17,26 @@
 #ifndef ALERTLISTCONTROLLER_H
 #define ALERTLISTCONTROLLER_H
 
-// toolkit headers
+// dsa headers
 #include "AbstractTool.h"
 
 // Qt headers
 #include <QAbstractListModel>
 
-namespace Esri {
-namespace ArcGISRuntime
-{
+namespace Esri::ArcGISRuntime {
   class GraphicsOverlay;
   class SimpleMarkerSceneSymbol;
-}}
+}
 
 namespace Dsa {
 
 class PointHighlighter;
-
 class AlertFilter;
 class AlertListProxyModel;
 class IdsAlertFilter;
 class StatusAlertFilter;
 
-class AlertListController : public Esri::ArcGISRuntime::Toolkit::AbstractTool
+class AlertListController : public AbstractTool
 {
   Q_OBJECT
 

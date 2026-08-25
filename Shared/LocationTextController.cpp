@@ -1,4 +1,3 @@
-
 /*******************************************************************************
  *  Copyright 2012-2018 Esri
  *
@@ -20,14 +19,17 @@
 
 #include "LocationTextController.h"
 
-// toolkit headers
-#include "ToolManager.h"
-#include "ToolResourceProvider.h"
-
 // C++ API headers
 #include "CoordinateFormatter.h"
 #include "Scene.h"
 #include "Surface.h"
+
+// Qt headers
+#include <QFuture>
+
+// DSA headers
+#include "ToolManager.h"
+#include "ToolResourceProvider.h"
 
 using namespace Esri::ArcGISRuntime;
 
@@ -53,7 +55,7 @@ const QString LocationTextController::Feet = QStringLiteral("feet");
 /*!
   \class Dsa::LocationTextController
   \inmodule Dsa
-  \inherits Toolkit::AbstractTool
+  \inherits AbstractTool
   \brief Tool controller for displaying the current location.
  */
 
@@ -61,17 +63,17 @@ const QString LocationTextController::Feet = QStringLiteral("feet");
  \brief Constructor that takes an optional \a parent.
  */
 LocationTextController::LocationTextController(QObject* parent) :
-  Toolkit::AbstractTool(parent),
+  AbstractTool(parent),
   m_coordinateFormat(DMS),
   m_unitOfMeasurement(Meters)
 {
-  connect(Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::geoViewChanged,
+  connect(ToolResourceProvider::instance(), &ToolResourceProvider::geoViewChanged,
           this, &LocationTextController::onGeoViewChanged);
 
-  connect(Toolkit::ToolResourceProvider::instance(), &Toolkit::ToolResourceProvider::locationChanged,
+  connect(ToolResourceProvider::instance(), &ToolResourceProvider::locationChanged,
           this, &LocationTextController::onLocationChanged);
 
-  Toolkit::ToolManager::instance().addTool(this);
+  ToolManager::instance().addTool(this);
 }
 
 /*!
@@ -108,7 +110,7 @@ QString LocationTextController::currentElevationText() const
 }
 
 /*!
- \brief Slot for Toolkit::ToolResourceProvider::locationChanged.
+ \brief Slot for ToolResourceProvider::locationChanged.
 
  Uses the provided \a pt to update the location and elevation text.
  */
@@ -129,10 +131,22 @@ void LocationTextController::onLocationChanged(const Point& pt)
     formatElevationText(pt.z());
   else
   {
-    if (!m_surface)
+    // TODO:
+    // fixed a missing reference to the baseSurface possibly because the geoView changed signal
+    // was not emitted just by adding the .dted layer as an elevation source
+    // this should probably be updated to connect to the layers changed event
+    auto* scene = ToolResourceProvider::instance()->scene();
+    if (!scene)
+      return;
+    auto* surface = scene->baseSurface();
+    if (!surface)
       return;
 
-    m_surface->locationToElevation(pt);
+    // set the elevation text in the continuation block
+    surface->elevationAsync(pt).then(this, [this](double elevation)
+    {
+      formatElevationText(elevation);
+    });
   }
 }
 
@@ -141,17 +155,10 @@ void LocationTextController::onLocationChanged(const Point& pt)
  */
 void LocationTextController::onGeoViewChanged()
 {
-  Scene* scene = Toolkit::ToolResourceProvider::instance()->scene();
+  Scene* scene = ToolResourceProvider::instance()->scene();
   if (scene)
   {
     m_surface = scene->baseSurface();
-
-    // connect the Surface::locationToElevationCompleted signal
-    connect(m_surface, &Surface::locationToElevationCompleted, this, [this](QUuid, double elevation)
-    {
-      // format the elevation for display in QML
-      formatElevationText(elevation);
-    });
   }
 }
 

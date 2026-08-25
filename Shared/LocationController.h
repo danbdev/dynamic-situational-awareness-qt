@@ -17,20 +17,19 @@
 #ifndef LOCATIONCONTROLLER_H
 #define LOCATIONCONTROLLER_H
 
-// toolkit headers
-#include "AbstractTool.h"
+// Qt headers
+#include <QString>
 
 // C++ API headers
 #include "Point.h"
 
-// Qt headers
-#include <QString>
+// dsa headers
+#include "AbstractTool.h"
 
-namespace Esri {
-namespace ArcGISRuntime {
-  class SceneQuickView;
+namespace Esri::ArcGISRuntime {
   class GraphicsOverlay;
-}}
+  class SceneQuickView;
+}
 
 class QGeoPositionInfoSource;
 class QCompass;
@@ -40,7 +39,7 @@ namespace Dsa {
 class GPXLocationSimulator;
 class LocationDisplay3d;
 
-class LocationController : public Esri::ArcGISRuntime::Toolkit::AbstractTool
+class LocationController : public AbstractTool
 {
   Q_OBJECT
 
@@ -105,6 +104,7 @@ private slots:
 private:
   void initPositionInfoSource();
   void clearPositionInfoSource();
+  QImage iconImage() const;
   QUrl modelSymbolPath() const;
 
   QGeoPositionInfoSource* m_positionSource = nullptr;

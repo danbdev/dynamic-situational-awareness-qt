@@ -14,16 +14,14 @@
  *  limitations under the License.
  ******************************************************************************/
 
-import QtQuick 2.9
-import QtQuick.Controls 2.2
-import QtQuick.Controls.Material 2.2
-import QtQuick.Window 2.2
-import QtQml.Models 2.2
-import QtGraphicalEffects 1.0
-import Esri.DSA 1.0
-import Esri.Handheld 1.0
-import Esri.ArcGISRuntime.Toolkit.Controls 100.5
-import Esri.ArcGISRuntime.Toolkit.Controls.CppApi 100.5
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Controls.Material
+import QtQuick.Window
+import QtQml.Models
+import Esri.ArcGISRuntime.OpenSourceApps.DSA
+import Esri.ArcGISRuntime.OpenSourceApps.Handheld
+import Esri.ArcGISRuntime.Toolkit as Toolkit
 
 Handheld {
     id: appRoot
@@ -35,6 +33,7 @@ Handheld {
     property real hudOpacity: 0.9
     property real hudRadius: 3 * scaleFactor
     property real hudMargins: 5 * scaleFactor
+    property bool configurationsChanged: false
 
     signal clearDialogAccepted();
     signal closeDialogAccepted();
@@ -44,6 +43,10 @@ Handheld {
     LocationController {
         id: locationController
         enabled: true
+    }
+
+    ConfigurationController {
+        id: configurationController
     }
 
     PrimaryToolbar {
@@ -170,20 +173,26 @@ Handheld {
             radius: hudRadius
         }
 
-        ArcGISCompass {
+        Toolkit.NorthArrow {
             id: compass
+            geoView: sceneView
             anchors {
                 right: parent.right
                 bottom: sceneView.attributionTop
                 bottomMargin: 10 * scaleFactor
                 rightMargin: parent.height < navTool.height * 1.6 ? 60 * scaleFactor : 15 * scaleFactor
             }
-            autoHideCompass: false
+            autoHide: false
             width: DsaStyles.primaryIconSize * scaleFactor
             height: width
         }
 
-        CoordinateConversion {
+        CoordinateConversionToolProxy {
+            id: dsaCoordinateController
+            inInputMode: coordinateConversion.inInputMode
+        }
+
+        Toolkit.CoordinateConversion {
             id: coordinateConversion
             anchors {
                 bottom: followHud.visible ? followHud.top : currentLocation.top
@@ -191,17 +200,26 @@ Handheld {
                 right: navTool.left
                 margins: hudMargins
             }
-
-            objectName: "coordinateConversion"
-            visible: false
             geoView: sceneView
-            highlightColor : Material.accent
-            textColor: Material.foreground
-            backgroundColor: Material.background
-            fontSize: DsaStyles.toolFontPixelSize
-            fontFamily: DsaStyles.fontFamily
-            backgroundOpacity: hudOpacity
-            radius: hudRadius
+            controller: dsaCoordinateController.controller
+            inputFormat: dsaCoordinateController.inputFormat
+            visible: dsaCoordinateController.active
+
+            palette {
+                text: Material.foreground
+                highlight: Material.accent
+            }
+
+            font {
+                family: DsaStyles.fontFamily
+                pixelSize: DsaStyles.toolFontPixelSize
+            }
+
+            background: Rectangle {
+                color: Material.background
+                opacity: hudOpacity
+                radius: hudRadius
+            }
 
             onVisibleChanged: {
                 if (!visible)
@@ -368,7 +386,7 @@ Handheld {
             }
         }
 
-        PopupStackView {
+        Toolkit.PopupStackView {
             id: identifyResults
             anchors {
                 left: sceneView.left
@@ -376,11 +394,13 @@ Handheld {
                 right: sceneView.right
                 bottom: sceneView.attributionTop
             }
-            backgroundColor: Material.primary
-            attributeNameTextColor: Material.foreground
-            attributeValueTextColor: Material.foreground
-            titleTextColor: Material.foreground
-            closeButtonColor: Material.foreground
+            palette {
+                text: Material.foreground
+            }
+            background: Rectangle {
+                color: Material.primary
+            }
+            visible: false
         }
 
         Drawer {
@@ -490,11 +510,10 @@ Handheld {
         }
 
         onPopupManagersChanged: {
-            identifyResults.dismiss();
-            identifyResults.popupManagers = popupManagers;
-
-            if (popupManagers.length > 0)
-                identifyResults.show();
+            if (popupManagers.length > 0) {
+                identifyResults.popupManagers = popupManagers;
+                identifyResults.visible = true;
+            }
         }
     }
 
@@ -511,7 +530,7 @@ Handheld {
         visible: false
     }
 
-    onErrorOccurred: {
+    onErrorOccurred: (message) => {
         // if the parent is null, the app is in a loading state and not yet ready to display errors
         if (parent) {
             msgDialog.informativeText = message;
@@ -525,6 +544,15 @@ Handheld {
     onParentChanged: {
         if (parent && msgDialog.informativeText.length > 0)
             msgDialog.open();
+
+        // skip if for any reason this method is called again
+        if (configurationsChanged)
+            return;
+
+        // set the skip flag on first run and prompt for download if nothing was available on device
+        configurationsChanged = true;
+        if (parent && !configurationController.configurationIsAvailable)
+            configurationDownloadDialog.open()
     }
 
     DsaMessageDialog {
@@ -584,5 +612,18 @@ Handheld {
 
         onAccepted: markupLayerReceived(path, true);
         onRejected: markupLayerReceived(path, false);
+    }
+
+    DsaYesNoDialog {
+        id: configurationDownloadDialog
+        informativeText: "Download the default configuration data from Esri (~450mb)?"
+        onAccepted: showConfigurations(true);
+        onRejected: showConfigurations(false);
+    }
+    function showConfigurations(downloadDefaultData) {
+        if (downloadDefaultData)
+            configurationController.downloadDefaultData();
+
+        optionsTool.showConfigurationsTab();
     }
 }

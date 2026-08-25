@@ -14,12 +14,11 @@
  *  limitations under the License.
  ******************************************************************************/
 
-import QtQuick 2.9
-import QtQuick.Controls 2.2
-import QtQuick.Controls.Material 2.2
-import QtQuick.Window 2.2
-import Esri.DSA 1.0
-import Esri.ArcGISRuntime.Toolkit.Controls.CppApi 100.5
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Controls.Material
+import QtQuick.Window
+import Esri.ArcGISRuntime.OpenSourceApps.DSA
 
 Row {
     id: mapToolRow
@@ -131,25 +130,6 @@ Row {
             name: basemapIcon.toolName
             PropertyChanges {
                 target: basemapIcon
-                selected: true
-            }
-            PropertyChanges {
-                target: tocIcon
-                selected: selected
-            }
-            PropertyChanges {
-                target: coordinateConversionIcon
-                selected: selected
-            }
-            PropertyChanges {
-                target: identifyIcon
-                selected: selected
-            }
-        },
-        State {
-            name: basemapIcon.toolName
-            PropertyChanges {
-                target: basemapIcon
                 selected: selected
             }
             PropertyChanges {
@@ -228,12 +208,12 @@ Row {
             else
                 mapToolRow.state = toolName;
 
-            if (coordinateConversion.visible) {
-                coordinateConversion.visible = false;
+            if (dsaCoordinateController.active) {
+                dsaCoordinateController.active = false;
                 mapToolRow.state = "clear";
                 selected = false;
             } else {
-                coordinateConversion.visible = true;
+                dsaCoordinateController.active = true;
             }
         }
     }

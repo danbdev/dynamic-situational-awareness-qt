@@ -24,14 +24,16 @@
 #include "GeometryBuilder.h"
 #include "GeometryTypes.h"
 #include "Graphic.h"
+#include "GraphicsOverlay.h"
 #include "MapView.h"
+#include "MapViewTypes.h"
 #include "MultipartBuilder.h"
-#include "MultipointBuilder.h"
+#include "Part.h"
+#include "PartCollection.h"
 #include "Point.h"
-#include "PointBuilder.h"
-#include "PolygonBuilder.h"
 #include "PolylineBuilder.h"
 #include "SceneView.h"
+#include "SpatialReference.h"
 
 using namespace Esri::ArcGISRuntime;
 
@@ -40,7 +42,7 @@ namespace Dsa {
 /*!
   \class Dsa::AbstractSketchTool
   \inmodule Dsa
-  \inherits Toolkit::AbstractTool
+  \inherits AbstractTool
   \brief Abstract tool controller for working with sketches/markups.
  */
 
